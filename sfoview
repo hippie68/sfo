@@ -16,15 +16,13 @@ if [[ $(getbytes 0x00 0x04) != 00505346 ]]; then
 fi
 #version=$(getbytes 0x04 0x04)
 keyTableOffset=$(getbytes 0x08 0x04)
-# Integers and offsets need to be reversed
 keyTableOffset=0x${keyTableOffset:6:2}${keyTableOffset:4:2}${keyTableOffset:2:2}${keyTableOffset:0:2}
 dataTableOffset=$(getbytes 0x0C 0x04)
 dataTableOffset=0x${dataTableOffset:6:2}${dataTableOffset:4:2}${dataTableOffset:2:2}${dataTableOffset:0:2}
 indexTableEntries=$(getbytes 0x10 0x04)
-indexTableEntries=${indexTableEntries:6:2}${indexTableEntries:4:2}${indexTableEntries:2:2}${indexTableEntries:0:2}
+indexTableEntries=$((0x${indexTableEntries:6:2}${indexTableEntries:4:2}${indexTableEntries:2:2}${indexTableEntries:0:2}))
 
-i=0
-while true; do
+for ((i=0;i<"$indexTableEntries";i++)); do
   keyOffset=$(getbytes $((0x14+0x10*i)) 0x02)
   keyOffset=0x${keyOffset:2:2}${keyOffset:0:2}
   param_fmt=$(getbytes $((0x16+0x10*i)) 0x02)
@@ -39,12 +37,14 @@ while true; do
   if [[ $key != "" ]]; then
     echo -n "$key="
   else
-    break
+    echo "[EMPTY KEY]"
+    continue
   fi
 
   data=$(getbytes $((dataTableOffset+dataOffset)) "$paramLen")
   case "$param_fmt" in
     0400) # UTF-8 special mode string
+      echo "[SPECIAL MODE STRING]"
       ;;
     0402) # UTF-8 string
       echo "${data%00}" | xxd -r -p
@@ -54,12 +54,6 @@ while true; do
       data=0x${data:6:2}${data:4:2}${data:2:2}${data:0:2}
       echo "$data"
       ;;
-    *) break
+    *) echo "[UNKNOWN DATA TYPE]"
   esac
-
-  ((i++))
 done
-
-if [[ $i -ne $indexTableEntries ]]; then
-  echo "Warning: ${indexTableEntries##*0} keys expected, but $i found." >&2
-fi
