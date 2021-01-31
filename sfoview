@@ -11,7 +11,7 @@ getbytes() {
 
 # Header
 if [[ $(getbytes 0x00 0x04) != 00505346 ]]; then
-  echo "Not a param.sfo file! ("PSF" Magic not found)" >&2
+  echo "Not a param.sfo file! (\"PSF\" Magic not found)" >&2
   exit 1
 fi
 version=$(getbytes 0x04 0x04)
@@ -25,24 +25,24 @@ indexTableEntries=${indexTableEntries:6:2}${indexTableEntries:4:2}${indexTableEn
 
 i=0
 while true; do
-  keyOffset=$(getbytes $((0x14+0x10*$i)) 0x02)
+  keyOffset=$(getbytes $((0x14+0x10*i)) 0x02)
   keyOffset=0x${keyOffset:2:2}${keyOffset:0:2}
-  param_fmt=$(getbytes $((0x16+0x10*$i)) 0x02)
-  paramLen=$(getbytes $((0x18+0x10*$i)) 0x04)
+  param_fmt=$(getbytes $((0x16+0x10*i)) 0x02)
+  paramLen=$(getbytes $((0x18+0x10*i)) 0x04)
   paramLen=0x${paramLen:6:2}${paramLen:4:2}${paramLen:2:2}${paramLen:0:2}
-  paramMaxLen=$(getbytes $((0x1C+0x10*$i)) 0x04)
+  paramMaxLen=$(getbytes $((0x1C+0x10*i)) 0x04)
   paramMaxLen=0x${paramMaxLen:6:2}${paramMaxLen:4:2}${paramMaxLen:2:2}${paramMaxLen:0:2}
-  dataOffset=$(getbytes $((0x20+0x10*$i)) 0x04)
+  dataOffset=$(getbytes $((0x20+0x10*i)) 0x04)
   dataOffset=0x${dataOffset:6:2}${dataOffset:4:2}${dataOffset:2:2}${dataOffset:0:2}
 
-  key=$(getbytes $(($keyTableOffset+$keyOffset)) 0x100 | xxd -r -p | { read -r -d $'\0' line; echo "$line"; })
+  key=$(getbytes $((keyTableOffset+keyOffset)) 0x100 | xxd -r -p | { read -r -d $'\0' line; echo "$line"; })
   if [[ $key != "" ]]; then
     echo -n "$key="
   else
     break
   fi
 
-  data=$(getbytes $(($dataTableOffset+$dataOffset)) $paramLen)
+  data=$(getbytes $((dataTableOffset+dataOffset)) $paramLen)
   case "$param_fmt" in
     0400) # UTF-8 special mode string
       ;;
