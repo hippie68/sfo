@@ -14,7 +14,7 @@ if [[ $(getbytes 0x00 0x04) != 00505346 ]]; then
   echo "Not a param.sfo file! (\"PSF\" Magic not found)" >&2
   exit 1
 fi
-version=$(getbytes 0x04 0x04)
+#version=$(getbytes 0x04 0x04)
 keyTableOffset=$(getbytes 0x08 0x04)
 # Integers and offsets need to be reversed
 keyTableOffset=0x${keyTableOffset:6:2}${keyTableOffset:4:2}${keyTableOffset:2:2}${keyTableOffset:0:2}
@@ -42,7 +42,7 @@ while true; do
     break
   fi
 
-  data=$(getbytes $((dataTableOffset+dataOffset)) $paramLen)
+  data=$(getbytes $((dataTableOffset+dataOffset)) "$paramLen")
   case "$param_fmt" in
     0400) # UTF-8 special mode string
       ;;
@@ -51,7 +51,7 @@ while true; do
       echo
       ;;
     0404) # Integer
-      data=${data:6:2}${data:4:2}${data:2:2}${data:0:2}
+      data=0x${data:6:2}${data:4:2}${data:2:2}${data:0:2}
       echo "$data"
       ;;
     *) break
