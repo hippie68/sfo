@@ -4,65 +4,62 @@
 
 paramsfo_file=$1
 
-# $1: offset $2: length; both in hex
+# $1: offset in bytes, $2: length in bytes
 getbytes() {
   xxd -p -s $(($1)) -l $(($2)) "$paramsfo_file"
 }
 
-# Offsets and integers need to be reversed
-reverse() {
-  local output i
-  for i in $(seq 1 $((${#1}/2))); do
-    output=${1:$(((i-1)*2)):2}"$output"
-  done
-  echo "$output"
-}
-
-# Header SFO
+# Header
 if [[ $(getbytes 0x00 0x04) != 00505346 ]]; then
   echo "Not a param.sfo file! ("PSF" Magic not found)" >&2
   exit 1
 fi
 version=$(getbytes 0x04 0x04)
-key_table_start_offset=0x$(reverse $(getbytes 0x08 0x04))
-data_table_start_offset=0x$(reverse $(getbytes 0x0C 0x04))
-number_of_entries_in_index_table=$(reverse $(getbytes 0x10 0x04))
+keyTableOffset=$(getbytes 0x08 0x04)
+# Integers and offsets need to be reversed
+keyTableOffset=0x${keyTableOffset:6:2}${keyTableOffset:4:2}${keyTableOffset:2:2}${keyTableOffset:0:2}
+dataTableOffset=$(getbytes 0x0C 0x04)
+dataTableOffset=0x${dataTableOffset:6:2}${dataTableOffset:4:2}${dataTableOffset:2:2}${dataTableOffset:0:2}
+indexTableEntries=$(getbytes 0x10 0x04)
+indexTableEntries=${indexTableEntries:6:2}${indexTableEntries:4:2}${indexTableEntries:2:2}${indexTableEntries:0:2}
 
-# Returns any Bash math operation as hex number
-hexmath() {
-  printf "0x%X" $(("$1"))
-}
-
-# Index table
 i=0
 while true; do
-  key_table_offset=$(getbytes $(hexmath "0x14+0x10*$i") 0x02)
-  key_table_offset=0x${key_table_offset:2:2}${key_table_offset:0:2}
-  param_fmt=$(getbytes $(hexmath "0x16+0x10*$i") 0x02)
-  parameter_length=$(getbytes $(hexmath "0x18+0x10*$i") 0x04)
-  parameter_length=0x${parameter_length:2:2}${parameter_length:0:2}
-  parameter_max_length=$(getbytes $(hexmath "0x1C+0x10*$i") 0x04)
-  parameter_max_length=0x${parameter_max_length:2:2}${parameter_max_length:0:2}
-  data_table_offset=$(getbytes $(hexmath "0x20+0x10*$i") 0x04)
-  data_table_offset=0x${data_table_offset:2:2}${data_table_offset:0:2}
+  keyOffset=$(getbytes $((0x14+0x10*$i)) 0x02)
+  keyOffset=0x${keyOffset:2:2}${keyOffset:0:2}
+  param_fmt=$(getbytes $((0x16+0x10*$i)) 0x02)
+  paramLen=$(getbytes $((0x18+0x10*$i)) 0x04)
+  paramLen=0x${paramLen:6:2}${paramLen:4:2}${paramLen:2:2}${paramLen:0:2}
+  paramMaxLen=$(getbytes $((0x1C+0x10*$i)) 0x04)
+  paramMaxLen=0x${paramMaxLen:6:2}${paramMaxLen:4:2}${paramMaxLen:2:2}${paramMaxLen:0:2}
+  dataOffset=$(getbytes $((0x20+0x10*$i)) 0x04)
+  dataOffset=0x${dataOffset:6:2}${dataOffset:4:2}${dataOffset:2:2}${dataOffset:0:2}
 
-  key=$(getbytes $(hexmath "$key_table_start_offset+$key_table_offset") 0x100 | xxd -r -p | { read -r -d $'\0' line; echo "$line"; })
+  key=$(getbytes $(($keyTableOffset+$keyOffset)) 0x100 | xxd -r -p | { read -r -d $'\0' line; echo "$line"; })
   if [[ $key != "" ]]; then
     echo -n "$key="
   else
     break
   fi
 
-  data=$(getbytes $(hexmath "$data_table_start_offset+$data_table_offset") $parameter_length)
+  data=$(getbytes $(($dataTableOffset+$dataOffset)) $paramLen)
   case "$param_fmt" in
-    0400) true ;;
-    0402) echo "$data" | xxd -r -p; echo ;;
-    0404) reverse "$data" ;;
+    0400) # UTF-8 special mode string
+      ;;
+    0402) # UTF-8 string
+      echo "${data%00}" | xxd -r -p
+      echo
+      ;;
+    0404) # Integer
+      data=${data:6:2}${data:4:2}${data:2:2}${data:0:2}
+      echo "$data"
+      ;;
     *) break
   esac
+
   ((i++))
 done
 
-if [[ $i -ne $number_of_entries_in_index_table ]]; then
-  echo "Warning: ${number_of_entries_in_index_table##*0} keys expected, but $i found." >&2
+if [[ $i -ne $indexTableEntries ]]; then
+  echo "Warning: ${indexTableEntries##*0} keys expected, but $i found." >&2
 fi
