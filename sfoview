@@ -29,9 +29,10 @@ else
 fi
 
 getbytes() {
-  xxd -u -p -s $(($1+$pkgOffset)) -l "$2" "$file"
+  xxd -u -p -s $(($1+pkgOffset)) -l "$2" "$file"
 }
 
+# https://www.psdevwiki.com/ps4/Param.sfo#Header_SFO
 keyTableOffset=$(getbytes 0x08 0x04)
 keyTableOffset=0x${keyTableOffset:6:2}${keyTableOffset:4:2}${keyTableOffset:2:2}${keyTableOffset:0:2}
 dataTableOffset=$(getbytes 0x0C 0x04)
@@ -39,22 +40,34 @@ dataTableOffset=0x${dataTableOffset:6:2}${dataTableOffset:4:2}${dataTableOffset:
 indexTableEntries=$(getbytes 0x10 0x04)
 indexTableEntries=$((0x${indexTableEntries:6:2}${indexTableEntries:4:2}${indexTableEntries:2:2}${indexTableEntries:0:2}))
 
-for ((i=0;i<"$indexTableEntries";i++)); do
-  keyOffset=$(getbytes $((0x14+0x10*i)) 0x02)
-  keyOffset=0x${keyOffset:2:2}${keyOffset:0:2}
-  key=$(getbytes $((keyTableOffset+keyOffset)) 0x100 | xxd -r -p | { read -r -d $'\0' line; echo "$line"; })
+# Get nullstring-delimited keys
+# https://www.psdevwiki.com/ps4/Param.sfo#Key_table
+i=0
+while read -r -d $'\0' line; do
+  key[$i]="$line"
+  ((i++))
+  [[ $i -gt $indexTableEntries ]] && break
+done  < <(getbytes "$keyTableOffset" 5000 | xxd -r -p)
+
+# Get full index table
+# https://www.psdevwiki.com/ps4/Param.sfo#Index_table
+indexTable=$(getbytes 0x14 $((0x10*indexTableEntries)))
+indexTable=${indexTable//$'\n'} # xxd adds newlines which we must remove
+
+# Get data
+for ((i=0;i<indexTableEntries;i++)); do
   if [[ $search == "" ]]; then
-    echo -n "$key="
-  elif [[ $search != "${key,,}" ]]; then
+    echo -n "${key[$i]}="
+  elif [[ $search != "${key[$i],,}" ]]; then
     continue
   fi
-
-  param_fmt=$(getbytes $((0x16+0x10*i)) 0x02)
-  paramLen=$(getbytes $((0x18+0x10*i)) 0x04)
+  #keyOffset[$i]=${indexTable:$((i*32+0)):4}
+  param_fmt=${indexTable:$((i*32+4)):4}
+  paramLen=${indexTable:$((i*32+8)):8}
   paramLen=0x${paramLen:6:2}${paramLen:4:2}${paramLen:2:2}${paramLen:0:2}
-#  paramMaxLen=$(getbytes $((0x1C+0x10*i)) 0x04)
-#  paramMaxLen=0x${paramMaxLen:6:2}${paramMaxLen:4:2}${paramMaxLen:2:2}${paramMaxLen:0:2}
-  dataOffset=$(getbytes $((0x20+0x10*i)) 0x04)
+  paramMaxLen=${indexTable:$((i*32+16)):8}
+  paramMaxLen=0x${paramMaxLen:6:2}${paramMaxLen:4:2}${paramMaxLen:2:2}${paramMaxLen:0:2}
+  dataOffset=${indexTable:$((i*32+24)):8}
   dataOffset=0x${dataOffset:6:2}${dataOffset:4:2}${dataOffset:2:2}${dataOffset:0:2}
   data=$(getbytes $((dataTableOffset+dataOffset)) "$paramLen")
   case "$param_fmt" in
@@ -72,5 +85,5 @@ for ((i=0;i<"$indexTableEntries";i++)); do
     *) echo "[UNKNOWN DATA TYPE]"
   esac
 
-  [[ $search == "${key,,}" ]] && exit 0
+  [[ $search == "${key[$i],,}" ]] && exit 0
 done
