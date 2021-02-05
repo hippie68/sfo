@@ -12,8 +12,14 @@ fi
 file=$1
 search=${2,,}
 
-# Check whether file is PKG or param.sfo
-magic=$(xxd -u -p -l 4 "$file")
+getbytes() {
+  xxd -u -p -s $(($1+pkgOffset)) -l "$2" "$file"
+}
+
+# Header
+# https://www.psdevwiki.com/ps4/Param.sfo#Header_SFO
+header=$(getbytes 0x00 20)
+magic=${header:0:8}
 if [[ $magic == 7F434E54 ]]; then # PKG file
   if pkgOffset=$(xxd -u "$file" | grep -m 1 "0050 5346"); then
     pkgOffset=0x${pkgOffset%%:*}
@@ -22,22 +28,16 @@ if [[ $magic == 7F434E54 ]]; then # PKG file
     exit 1
   fi
 elif [[ $magic == 00505346 ]]; then # param.sfo file
-    pkgOffset=0
+  pkgOffset=0
 else
   echo "$1: Not a PKG neither a param.sfo file!" >&2
   exit 1
 fi
-
-getbytes() {
-  xxd -u -p -s $(($1+pkgOffset)) -l "$2" "$file"
-}
-
-# https://www.psdevwiki.com/ps4/Param.sfo#Header_SFO
-keyTableOffset=$(getbytes 0x08 0x04)
+keyTableOffset=${header:16:8}
 keyTableOffset=0x${keyTableOffset:6:2}${keyTableOffset:4:2}${keyTableOffset:2:2}${keyTableOffset:0:2}
-dataTableOffset=$(getbytes 0x0C 0x04)
+dataTableOffset=${header:24:8}
 dataTableOffset=0x${dataTableOffset:6:2}${dataTableOffset:4:2}${dataTableOffset:2:2}${dataTableOffset:0:2}
-indexTableEntries=$(getbytes 0x10 0x04)
+indexTableEntries=${header:32:8}
 indexTableEntries=$((0x${indexTableEntries:6:2}${indexTableEntries:4:2}${indexTableEntries:2:2}${indexTableEntries:0:2}))
 
 # Get nullstring-delimited keys
@@ -61,7 +61,7 @@ for ((i=0;i<indexTableEntries;i++)); do
   elif [[ $search != "${key[$i],,}" ]]; then
     continue
   fi
-  #keyOffset[$i]=${indexTable:$((i*32+0)):4}
+  #keyOffset=${indexTable:$((i*32+0)):4}
   param_fmt=${indexTable:$((i*32+4)):4}
   paramLen=${indexTable:$((i*32+8)):8}
   paramLen=0x${paramLen:6:2}${paramLen:4:2}${paramLen:2:2}${paramLen:0:2}
