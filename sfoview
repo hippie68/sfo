@@ -18,10 +18,9 @@ getbytes() {
 
 # Header
 # https://www.psdevwiki.com/ps4/Param.sfo#Header_SFO
-header=$(getbytes 0x00 20)
-magic=${header:0:8}
+magic=$(getbytes 0x00 0x04)
 if [[ $magic == 7F434E54 ]]; then # PKG file
-  if pkgOffset=$(xxd -u "$file" | grep -m 1 "0050 5346"); then
+  if pkgOffset=$(xxd "$file" | grep -m 1 "0050 5346"); then
     pkgOffset=0x${pkgOffset%%:*}
   else
     echo "Error: param.sfo magic not found inside PKG \"$1\"" >&2
@@ -33,6 +32,7 @@ else
   echo "$1: Not a PKG neither a param.sfo file!" >&2
   exit 1
 fi
+header=$(getbytes 0x00 20)
 keyTableOffset=${header:16:8}
 keyTableOffset=0x${keyTableOffset:6:2}${keyTableOffset:4:2}${keyTableOffset:2:2}${keyTableOffset:0:2}
 dataTableOffset=${header:24:8}
