@@ -1,20 +1,37 @@
 #!/bin/bash
 
+# Prints SFO information of either a PS4 PKG or param.sfo file.
+# Optional second argument is a key search string.
 # Made with info from https://www.psdevwiki.com/ps4/Param.sfo
 
-paramsfo_file=$1
-
-# $1: offset in bytes, $2: length in bytes
-getbytes() {
-  xxd -p -s $(($1)) -l $(($2)) "$paramsfo_file"
-}
-
-# Header
-if [[ $(getbytes 0x00 0x04) != 00505346 ]]; then
-  echo "Not a param.sfo file! (\"PSF\" Magic not found)" >&2
+if [[ $1 == "" ]]; then
+  echo "Usage: $0 <file> [<search string>]" >&2
   exit 1
 fi
-#version=$(getbytes 0x04 0x04)
+
+file=$1
+search=${2,,}
+
+# Check whether file is PKG or param.sfo
+magic=$(xxd -u -p -l 4 "$file")
+if [[ $magic == 7F434E54 ]]; then # PKG file
+  if pkgOffset=$(xxd -u "$file" | grep -m 1 "0050 5346"); then
+    pkgOffset=0x${pkgOffset%%:*}
+  else
+    echo "Error: param.sfo magic not found inside PKG \"$1\"" >&2
+    exit 1
+  fi
+elif [[ $magic == 00505346 ]]; then # param.sfo file
+    pkgOffset=0
+else
+  echo "$1: Not a PKG neither a param.sfo file!" >&2
+  exit 1
+fi
+
+getbytes() {
+  xxd -u -p -s $(($1+$pkgOffset)) -l "$2" "$file"
+}
+
 keyTableOffset=$(getbytes 0x08 0x04)
 keyTableOffset=0x${keyTableOffset:6:2}${keyTableOffset:4:2}${keyTableOffset:2:2}${keyTableOffset:0:2}
 dataTableOffset=$(getbytes 0x0C 0x04)
@@ -25,6 +42,13 @@ indexTableEntries=$((0x${indexTableEntries:6:2}${indexTableEntries:4:2}${indexTa
 for ((i=0;i<"$indexTableEntries";i++)); do
   keyOffset=$(getbytes $((0x14+0x10*i)) 0x02)
   keyOffset=0x${keyOffset:2:2}${keyOffset:0:2}
+  key=$(getbytes $((keyTableOffset+keyOffset)) 0x100 | xxd -r -p | { read -r -d $'\0' line; echo "$line"; })
+  if [[ $search == "" ]]; then
+    echo -n "$key="
+  elif [[ $search != "${key,,}" ]]; then
+    continue
+  fi
+
   param_fmt=$(getbytes $((0x16+0x10*i)) 0x02)
   paramLen=$(getbytes $((0x18+0x10*i)) 0x04)
   paramLen=0x${paramLen:6:2}${paramLen:4:2}${paramLen:2:2}${paramLen:0:2}
@@ -32,15 +56,6 @@ for ((i=0;i<"$indexTableEntries";i++)); do
 #  paramMaxLen=0x${paramMaxLen:6:2}${paramMaxLen:4:2}${paramMaxLen:2:2}${paramMaxLen:0:2}
   dataOffset=$(getbytes $((0x20+0x10*i)) 0x04)
   dataOffset=0x${dataOffset:6:2}${dataOffset:4:2}${dataOffset:2:2}${dataOffset:0:2}
-
-  key=$(getbytes $((keyTableOffset+keyOffset)) 0x100 | xxd -r -p | { read -r -d $'\0' line; echo "$line"; })
-  if [[ $key != "" ]]; then
-    echo -n "$key="
-  else
-    echo "[EMPTY KEY]"
-    continue
-  fi
-
   data=$(getbytes $((dataTableOffset+dataOffset)) "$paramLen")
   case "$param_fmt" in
     0400) # UTF-8 special mode string
@@ -52,8 +67,10 @@ for ((i=0;i<"$indexTableEntries";i++)); do
       ;;
     0404) # Integer
       data=0x${data:6:2}${data:4:2}${data:2:2}${data:0:2}
-      echo "$data"
+      echo "$((data))"
       ;;
     *) echo "[UNKNOWN DATA TYPE]"
   esac
+
+  [[ $search == "${key,,}" ]] && exit 0
 done
