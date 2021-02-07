@@ -48,7 +48,7 @@ while read -r -d $'\0' line; do
   key[$i]="$line"
   ((i++))
   [[ $i -gt $indexTableEntries ]] && break
-done  < <(getbytes $keyTableOffset 5000 | xxd -r -p)
+done  < <(getbytes "$keyTableOffset" 5000 | xxd -r -p)
 
 # Get full index table
 # https://www.psdevwiki.com/ps4/Param.sfo#Index_table
@@ -56,7 +56,7 @@ indexTable=$(getbytes 0x14 $((0x10*indexTableEntries)))
 indexTable=${indexTable//$'\n'} # xxd adds newlines which we must remove
 
 # Get full data table
-dataTable=$(getbytes $dataTableOffset 5000)
+dataTable=$(getbytes "$dataTableOffset" 5000)
 dataTable=${dataTable//$'\n'}
 
 # Search data table data
@@ -76,29 +76,29 @@ for ((i=0;i<indexTableEntries;i++)); do
 
   # Write data to file
   if [[ $search == "${key[$i],,}" && $replace != "" ]]; then
-    if [[ ${#replace} -ge ${paramMaxLen} ]]; then
-      echo "Error: Replacement string too large ($((${paramMaxLen}-1)) characters allowed)." >&2
+    if [[ ${#replace} -ge $paramMaxLen ]]; then
+      echo "Error: Replacement string too large ($((paramMaxLen-1)) characters allowed)." >&2
       exit 1
     fi
     case $param_fmt in
       0402) # Replace UTF-8 string
-        printf "%x: %0$((paramMaxLen*2))x" "$((dataTableOffset+dataOffset))" | xxd -r - "$file" # Fill space with zeros
+        printf "%x: %0$((paramMaxLen*2))d" "$((pkgOffset+dataTableOffset+dataOffset))" | xxd -r - "$file" # Fill space with zeros
         newstring=$(printf "$replace" | xxd -p)
-        printf "%x: %s" "$((dataTableOffset+dataOffset))" "$newstring" | xxd -c 256 -r - "$file" # To do: fix strings longer than 128 chars getting truncated
+        printf "%x: %s" "$((pkgOffset+dataTableOffset+dataOffset))" "$newstring" | xxd -c 256 -r - "$file" # Write to file; to do: fix strings longer than 128 chars getting truncated
         newlen=$(printf "%08x" "$((${#replace}+1))")
         newlen=${newlen:6:2}${newlen:4:2}${newlen:2:2}${newlen:0:2}
-        printf "%x: %s" "$((0x14+i*16+4))" "$newlen" | xxd -r - "$file" # Write to file
+        printf "%x: %s" "$((pkgOffset+0x14+i*16+4))" "$newlen" | xxd -r - "$file" # Write new paramLen to file
         ;;
       0404) # Replace integer
-        (($replace))
+        ((replace))
         if [[ $? == 1 ]]; then
           echo "Error: Not a number: $replace" >&2
           exit 1
         fi
-        printf "%x: %04x" "$((dataTableOffset+dataOffset))" | xxd -r - "$file" # Fill space with zeros
+        printf "%x: %04d" "$((pkgOffset+dataTableOffset+dataOffset))"  | xxd -r - "$file" # Fill space with zeros
         newint=$(printf "%08x" "$replace")
         newint=${newint:6:2}${newint:4:2}${newint:2:2}${newint:0:2}
-        printf "%x: %s" "$((dataTableOffset+dataOffset))" "$newint" | xxd -r - "$file" # Write to file
+        printf "%x: %s" "$((pkgOffset+dataTableOffset+dataOffset))" "$newint" | xxd -r - "$file" # Write to file
         ;;
     esac
     exit
@@ -106,7 +106,7 @@ for ((i=0;i<indexTableEntries;i++)); do
 
   # Read data
   data=${dataTable:$((dataOffset*2)):$((paramLen*2))}
-  case ${param_fmt} in
+  case $param_fmt in
     0400) # UTF-8 special mode string
       echo "[SPECIAL MODE STRING]"
       ;;
