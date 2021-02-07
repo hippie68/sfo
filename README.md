@@ -8,7 +8,7 @@ You can print all SFO info:
 You can also search for a specific key, for example:
 
     sfo param.sfo PUBTOOLINFO
-    sfo your-game.pkg content_ide
+    sfo your-game.pkg content_id
 
 You can also overwrite existing data, for example:
 
