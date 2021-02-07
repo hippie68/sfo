@@ -1,6 +1,6 @@
 # sfo
 Reads SFO information from a PS4 PKG or param.sfo file.
-Overwrites SFO fields in a PS4 PKG or param.sfo file, one at a.
+Overwrites SFO fields in a PS4 PKG or param.sfo file, one at a time.
 
 You can print all SFO info:
 
