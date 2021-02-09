@@ -5,7 +5,7 @@
 # Made with info from https://www.psdevwiki.com/ps4/Param.sfo
 
 show_usage() {
-  echo "Usage: ${0##*/} [-w] file [search] [replace]" >&2
+  echo "Usage: ${0##*/} [-hw] file [search] [replace]" >&2
 }
 
 show_help() {
@@ -41,9 +41,10 @@ if [[ -f "$1" ]]; then
   file=$1
 else
   echo "Not a file: $1" >&2
+  exit 1
 fi
 search=${2,,}
-[[ $write_enabled == true ]] && replace=$3
+replace=$3
 
 getbytes() {
   xxd -u -p -s $(($1+pkgOffset)) -l "$2" "$file"
@@ -56,13 +57,13 @@ if [[ $magic == 7F434E54 ]]; then # PKG file
   if pkgOffset=$(xxd "$file" | grep -m 1 "0050 5346"); then
     pkgOffset=0x${pkgOffset%%:*}
   else
-    echo "Error: param.sfo magic not found inside PKG \"$1\"" >&2
+    echo "Error: param.sfo magic not found inside PKG \"$file\"" >&2
     exit 1
   fi
 elif [[ $magic == 00505346 ]]; then # param.sfo file
   pkgOffset=0
 else
-  echo "$1: Not a PKG neither a param.sfo file!" >&2
+  echo "$file: Not a PKG neither a param.sfo file!" >&2
   exit 1
 fi
 header=$(getbytes 0x00 20)
@@ -107,20 +108,22 @@ for ((i=0;i<indexTableEntries;i++)); do
   dataOffset=0x${dataOffset:6:2}${dataOffset:4:2}${dataOffset:2:2}${dataOffset:0:2}
 
   # Write data to file
-  if [[ $search == "${key[$i],,}" && $replace != "" ]]; then
+  if [[ $search == "${key[$i],,}" && $write_enabled == true ]]; then
     if [[ ${#replace} -ge $paramMaxLen ]]; then
       echo "Error: Replacement string too large ($((paramMaxLen-1)) characters allowed)." >&2
       exit 1
     fi
-    echo -e "Before:\n $(xxd $((pkgOffset+dataTableOffset+dataOffset)))"
     case $param_fmt in
       0402) # Replace UTF-8 string
-        printf "%x: %0$((paramMaxLen*2))d" "$((pkgOffset+dataTableOffset+dataOffset))" | xxd -r - "$file" # Fill space with zeros
-        newstring=$(printf "$replace" | xxd -p)
-        printf "%s" "$newstring" | xxd -r -seek $((pkgOffset+dataTableOffset+dataOffset)) - "$file" # Write to file; to do: fix strings longer than 128 chars getting truncated
+        printf "%x: %0$((paramMaxLen*2))d" "$((pkgOffset+dataTableOffset+dataOffset))" \
+          | xxd -r - "$file" # Fill space with zeros
+        printf "$replace" | xxd -o $((pkgOffset+dataTableOffset+dataOffset)) \
+          | xxd -r - "$file" # Write new string to file
         newlen=$(printf "%08x" "$((${#replace}+1))")
         newlen=${newlen:6:2}${newlen:4:2}${newlen:2:2}${newlen:0:2}
-        printf "%x: %s" "$((pkgOffset+0x14+i*16+4))" "$newlen" | xxd -r - "$file" # Write new paramLen to file
+        printf "%x: %s" "$((pkgOffset+0x14+i*16+4))" "$newlen" \
+          | xxd -r - "$file" # Write new paramLen to file
+        xxd -s $((pkgOffset+0x14+i*16+4)) -l 100 "$file"
         ;;
       0404) # Replace integer
         ((replace))
@@ -128,13 +131,14 @@ for ((i=0;i<indexTableEntries;i++)); do
           echo "Error: Not a number: $replace" >&2
           exit 1
         fi
-        printf "%x: %04d" "$((pkgOffset+dataTableOffset+dataOffset))"  | xxd -r - "$file" # Fill space with zeros
+        printf "%x: %04d" "$((pkgOffset+dataTableOffset+dataOffset))" \
+          | xxd -r - "$file" # Fill space with zeros
         newint=$(printf "%08x" "$replace")
         newint=${newint:6:2}${newint:4:2}${newint:2:2}${newint:0:2}
-        printf "%x: %s" "$((pkgOffset+dataTableOffset+dataOffset))" "$newint" | xxd -r - "$file" # Write to file
+        printf "%x: %s" "$((pkgOffset+dataTableOffset+dataOffset))" "$newint" \
+          | xxd -r - "$file" # Write new integer to file
         ;;
     esac
-    echo -e "After:\n$(xxd $((pkgOffset+dataTableOffset+dataOffset)))"
     exit
   fi
 
