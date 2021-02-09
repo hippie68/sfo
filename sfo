@@ -123,7 +123,6 @@ for ((i=0;i<indexTableEntries;i++)); do
         newlen=${newlen:6:2}${newlen:4:2}${newlen:2:2}${newlen:0:2}
         printf "%x: %s" "$((pkgOffset+0x14+i*16+4))" "$newlen" \
           | xxd -r - "$file" # Write new paramLen to file
-        xxd -s $((pkgOffset+0x14+i*16+4)) -l 100 "$file"
         ;;
       0404) # Replace integer
         ((replace))
