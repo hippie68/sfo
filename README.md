@@ -12,7 +12,5 @@ You can also search for a specific key, for example:
 
 You can also overwrite existing data, for example:
 
-    sfo param.sfo app_type 2
-    sfo your-game.pkg title "New Title that looks better"
-    
-Be careful, as providing 2 arguments enables overwriting.
+    sfo -w param.sfo app_type 2
+    sfo -w your-game.pkg title "New Title that looks better"
