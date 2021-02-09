@@ -21,7 +21,7 @@ show_help() {
   exit
 }
 
-if [[ $1 == "" ]]; then
+if [[ $@ == "" ]]; then
   show_usage
   exit 1
 fi
@@ -37,14 +37,14 @@ while [[ $1 == "-"?* ]]; do
   shift
 done
 
-if [[ -f "$1" ]]; then
-  file=$1
-else
-  echo "Not a file: $1" >&2
-  exit 1
-fi
+file=$1
+[[ -f "$file" ]] || { echo "Not a file: $file" >&2; exit 1; }
 search=${2,,}
 replace=$3
+if [[ $replace != "" && $write_enabled != true ]]; then
+  echo "Use option -w to enable write mode." >&2
+  exit 1
+fi
 
 getbytes() {
   xxd -u -p -s $(($1+pkgOffset)) -l "$2" "$file"
@@ -115,13 +115,13 @@ for ((i=0;i<indexTableEntries;i++)); do
     fi
     case $param_fmt in
       0402) # Replace UTF-8 string
-        printf "%x: %0$((paramMaxLen*2))d" "$((pkgOffset+dataTableOffset+dataOffset))" \
-          | xxd -r - "$file" # Fill space with zeros
+        printf "%0$((paramMaxLen*2))d" | xxd -r -p -seek \
+          $((pkgOffset+dataTableOffset+dataOffset)) - "$file" # Fill space with zeros
         printf "$replace" | xxd -o $((pkgOffset+dataTableOffset+dataOffset)) \
           | xxd -r - "$file" # Write new string to file
-        newlen=$(printf "%08x" "$((${#replace}+1))")
+        newlen=$(printf "%08x" $((${#replace}+1)))
         newlen=${newlen:6:2}${newlen:4:2}${newlen:2:2}${newlen:0:2}
-        printf "%x: %s" "$((pkgOffset+0x14+i*16+4))" "$newlen" \
+        printf "%x: %s" $((pkgOffset+0x14+i*16+4)) "$newlen" \
           | xxd -r - "$file" # Write new paramLen to file
         ;;
       0404) # Replace integer
@@ -130,13 +130,14 @@ for ((i=0;i<indexTableEntries;i++)); do
           echo "Error: Not a number: $replace" >&2
           exit 1
         fi
-        printf "%x: %04d" "$((pkgOffset+dataTableOffset+dataOffset))" \
+        printf "%x: %04d" $((pkgOffset+dataTableOffset+dataOffset)) \
           | xxd -r - "$file" # Fill space with zeros
         newint=$(printf "%08x" "$replace")
         newint=${newint:6:2}${newint:4:2}${newint:2:2}${newint:0:2}
-        printf "%x: %s" "$((pkgOffset+dataTableOffset+dataOffset))" "$newint" \
+        printf "%x: %s" $((pkgOffset+dataTableOffset+dataOffset)) "$newint" \
           | xxd -r - "$file" # Write new integer to file
         ;;
+      *) echo "Cannot replace this type of data: $param_fmt."; exit 1 ;;
     esac
     exit
   fi
