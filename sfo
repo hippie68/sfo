@@ -1,17 +1,49 @@
 #!/bin/bash
 
 # Prints SFO information of either a PS4 PKG or param.sfo file.
-# Optional second argument is a key search string.
+# Optionally searches for (and replaces) a specific string.
 # Made with info from https://www.psdevwiki.com/ps4/Param.sfo
 
+show_usage() {
+  echo "Usage: ${0##*/} [-w] file [search] [replace]" >&2
+}
+
+show_help() {
+  show_usage 2>&1
+  echo
+  echo "  Prints SFO information of either a PS4 PKG or param.sfo file."
+  echo "  Providing a search string will output the value of that specific key only."
+  echo "  Providing a replacement string will write it to the file (needs option -w)."
+  echo
+  echo "  Options:"
+  echo "    -h  Display this help info"
+  echo "    -w  Enable write mode"
+  exit
+}
+
 if [[ $1 == "" ]]; then
-  echo "Usage: $0 <file> [<search string>] [<replacement string>]" >&2
+  show_usage
   exit 1
 fi
 
-file=$1
+# Parse command line options
+while [[ $1 == "-"?* ]]; do
+  for ((i=1;i<${#1};i++)); do
+    case ${1:$i:1} in
+      h) show_help ;;
+      w) write_enabled=true ;;
+    esac
+  done
+  shift
+done
+
+if [[ -f "$1" ]]; then
+  file=$1
+else
+  echo "Not a file: $1" >&2
+fi
 search=${2,,}
-replace=$3
+[[ $write_enabled == true ]] && replace=$3
 
 getbytes() {
   xxd -u -p -s $(($1+pkgOffset)) -l "$2" "$file"
@@ -80,11 +112,12 @@ for ((i=0;i<indexTableEntries;i++)); do
       echo "Error: Replacement string too large ($((paramMaxLen-1)) characters allowed)." >&2
       exit 1
     fi
+    echo -e "Before:\n $(xxd $((pkgOffset+dataTableOffset+dataOffset)))"
     case $param_fmt in
       0402) # Replace UTF-8 string
         printf "%x: %0$((paramMaxLen*2))d" "$((pkgOffset+dataTableOffset+dataOffset))" | xxd -r - "$file" # Fill space with zeros
         newstring=$(printf "$replace" | xxd -p)
-        printf "%x: %s" "$((pkgOffset+dataTableOffset+dataOffset))" "$newstring" | xxd -c 256 -r - "$file" # Write to file; to do: fix strings longer than 128 chars getting truncated
+        printf "%s" "$newstring" | xxd -r -seek $((pkgOffset+dataTableOffset+dataOffset)) - "$file" # Write to file; to do: fix strings longer than 128 chars getting truncated
         newlen=$(printf "%08x" "$((${#replace}+1))")
         newlen=${newlen:6:2}${newlen:4:2}${newlen:2:2}${newlen:0:2}
         printf "%x: %s" "$((pkgOffset+0x14+i*16+4))" "$newlen" | xxd -r - "$file" # Write new paramLen to file
@@ -101,6 +134,7 @@ for ((i=0;i<indexTableEntries;i++)); do
         printf "%x: %s" "$((pkgOffset+dataTableOffset+dataOffset))" "$newint" | xxd -r - "$file" # Write to file
         ;;
     esac
+    echo -e "After:\n$(xxd $((pkgOffset+dataTableOffset+dataOffset)))"
     exit
   fi
 
