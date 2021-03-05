@@ -13,4 +13,4 @@ You can also search for a specific key, for example:
 You can also overwrite existing data, for example:
 
     sfo -w param.sfo app_type 2
-    sfo -w your-game.pkg title "New Title that looks better"
+    sfo -w your-game.pkg title "New Title that looks better" (may not work yet due to PKG checksums)
