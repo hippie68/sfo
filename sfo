@@ -50,7 +50,9 @@ getbytes() {
   xxd -u -p -s $(($1+pkgOffset)) -l "$2" "$file"
 }
 
-get_pkg_offset() { # https://www.psdevwiki.com/ps4/Package_Files
+# Finds the param.sfo's offset inside a PKG file
+# https://www.psdevwiki.com/ps4/Package_Files
+get_pkg_offset() {
   local pkg_file_count pkg_table_offset full_table i current_datablock id
   pkg_file_count=$((0x$(getbytes 0x00C 4)))
   pkg_table_offset=0x$(getbytes 0x018 4)
