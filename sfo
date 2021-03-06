@@ -50,13 +50,28 @@ getbytes() {
   xxd -u -p -s $(($1+pkgOffset)) -l "$2" "$file"
 }
 
+get_pkg_offset() { # https://www.psdevwiki.com/ps4/Package_Files
+  local pkg_file_count pkg_table_offset full_table i current_datablock id
+  pkg_file_count=$((0x$(getbytes 0x00C 4)))
+  pkg_table_offset=0x$(getbytes 0x018 4)
+  full_table=$(getbytes $pkg_table_offset $((32*pkg_file_count)))
+  full_table=${full_table//$'\n'} # xxd adds newlines which we must remove
+  for ((i=0;i<$pkg_file_count;i++)); do
+    current_datablock=${full_table:$i*64:64}
+    id=${current_datablock:0:8}
+    if [[ $id == 00001000 ]]; then # param.sfo ID
+      pkgOffset=0x${current_datablock:32:8}
+      return
+    fi
+  done
+}
+
 # Header
 # https://www.psdevwiki.com/ps4/Param.sfo#Header_SFO
 magic=$(getbytes 0x00 0x04)
 if [[ $magic == 7F434E54 ]]; then # PKG file
-  if pkgOffset=$(xxd "$file" | grep -m 1 "0050 5346"); then
-    pkgOffset=0x${pkgOffset%%:*}
-  else
+  get_pkg_offset
+  if [[ $(getbytes 0 4) != 00505346 ]]; then
     echo "Error: param.sfo magic not found inside PKG \"$file\"" >&2
     exit 1
   fi
