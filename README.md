@@ -16,4 +16,4 @@ You can also overwrite existing data, for example:
     sfo -w your-game.pkg title "New Title that looks better"
     
 Known issues:
-- Overwriting PKG files may result in a broken PKG. Writing the old values will restore the PKG.
+- Overwriting PKG files may result in a broken PKG. Writing the original values will restore the PKG.
