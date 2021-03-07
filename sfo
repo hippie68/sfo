@@ -58,7 +58,7 @@ get_pkg_offset() {
   pkg_table_offset=0x$(getbytes 0x018 4)
   full_table=$(getbytes $pkg_table_offset $((32*pkg_file_count)))
   full_table=${full_table//$'\n'} # xxd adds newlines which we must remove
-  for ((i=0;i<$pkg_file_count;i++)); do
+  for ((i=0;i<pkg_file_count;i++)); do
     current_datablock=${full_table:$i*64:64}
     id=${current_datablock:0:8}
     if [[ $id == 00001000 ]]; then # param.sfo ID
@@ -126,33 +126,45 @@ for ((i=0;i<indexTableEntries;i++)); do
 
   # Write data to file
   if [[ $search == "${key[$i],,}" && $write_enabled == true ]]; then
-    if [[ ${#replace} -ge $paramMaxLen ]]; then
-      echo "Error: Replacement string too large ($((paramMaxLen-1)) characters allowed)." >&2
-      exit 1
-    fi
     case $param_fmt in
       0402) # Replace UTF-8 string
+        # Check new string for valid length
+        if [[ ${#replace} -ge $paramMaxLen ]]; then
+          echo "Error: Replacement string \"$replace\" too large ($((paramMaxLen-1)) characters allowed)." >&2
+          exit 1
+        fi
+        # Fill space with zeros
         printf "%0$((paramMaxLen*2))d" | xxd -r -p -seek \
-          $((pkgOffset+dataTableOffset+dataOffset)) - "$file" # Fill space with zeros
+          $((pkgOffset+dataTableOffset+dataOffset)) - "$file"
+        # Write new string to file
         printf "$replace" | xxd -o $((pkgOffset+dataTableOffset+dataOffset)) \
-          | xxd -r - "$file" # Write new string to file
+          | xxd -r - "$file"
+        # Write new paramLen to file
         newlen=$(printf "%08x" $((${#replace}+1)))
         newlen=${newlen:6:2}${newlen:4:2}${newlen:2:2}${newlen:0:2}
         printf "%x: %s" $((pkgOffset+0x14+i*16+4)) "$newlen" \
-          | xxd -r - "$file" # Write new paramLen to file
+          | xxd -r - "$file"
         ;;
       0404) # Replace integer
-        ((replace))
+        # Test if new value is an integer
+        ((replace)) 2> /dev/null
         if [[ $? == 1 ]]; then
-          echo "Error: Not a number: $replace" >&2
+          echo "Error: Not an integer: \"$replace\"." >&2
           exit 1
         fi
+        # Check new integer for valid size
+        newint=$(printf "%08x" "$replace" 2> /dev/null)
+        if [[ ${#newint} -gt $(($paramMaxLen*2)) ]]; then
+          echo "Error: Replacement integer \"$replace\" larger than limit ($((0xFFFFFFFF)))." >&2
+          exit 1
+        fi
+        # Fill space with zeros
         printf "%x: %04d" $((pkgOffset+dataTableOffset+dataOffset)) \
-          | xxd -r - "$file" # Fill space with zeros
-        newint=$(printf "%08x" "$replace")
+          | xxd -r - "$file"
+        # Write new integer to file
         newint=${newint:6:2}${newint:4:2}${newint:2:2}${newint:0:2}
         printf "%x: %s" $((pkgOffset+dataTableOffset+dataOffset)) "$newint" \
-          | xxd -r - "$file" # Write new integer to file
+          | xxd -r - "$file"
         ;;
       *) echo "Cannot replace this type of data: $param_fmt."; exit 1 ;;
     esac
