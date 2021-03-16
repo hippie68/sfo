@@ -13,7 +13,6 @@ You can also search for a specific key, for example:
 You can also overwrite existing data, for example:
 
     sfo -w param.sfo app_type 2
-    sfo -w your-game.pkg title "New Title that looks better"
     
 Known issues:
-- Overwriting PKG files may result in a broken PKG. Writing the original values will restore the PKG.
+- Overwriting PKG files directly may result in a broken PKG. Writing the original values will restore the PKG.
