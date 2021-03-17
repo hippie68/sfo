@@ -27,6 +27,8 @@ You can also search for a specific key, for example:
 You can also overwrite existing data, for example:
 
     sfo -w param.sfo app_type 2
-    
+
+To overwrite integer data, use regular decimal numbers (not 0x...).
+
 Known issues:
 - Overwriting PKG files directly may result in a broken PKG. Writing the original values will restore the PKG.
