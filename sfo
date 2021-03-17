@@ -5,7 +5,7 @@
 # Made with info from https://www.psdevwiki.com/ps4/Param.sfo
 
 show_usage() {
-  echo "Usage: ${0##*/} [-hw] file [search] [replace]" >&2
+  echo "Usage: ${0##*/} [-hwx] file [search] [replace]" >&2
 }
 
 show_help() {
