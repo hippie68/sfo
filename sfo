@@ -10,14 +10,15 @@ show_usage() {
 
 show_help() {
   show_usage 2>&1
-  echo
-  echo "  Prints SFO information of either a PS4 PKG or param.sfo file."
-  echo "  Providing a search string will output the value of that specific key only."
-  echo "  Providing a replacement string will write it to the file (needs option -w)."
-  echo
-  echo "  Options:"
-  echo "    -h  Display this help info"
-  echo "    -w  Enable write mode"
+  echo "
+  Prints SFO information of either a PS4 PKG or param.sfo file.
+  Providing a search string will output the value of that specific key only.
+  Providing a replacement string will write it to the file (needs option -w).
+
+  Options:
+    -h  Display this help info
+    -w  Enable write mode
+    -x  Print integer data in hexadecimal format"
   exit
 }
 
@@ -31,7 +32,8 @@ while [[ $1 == "-"?* ]]; do
   for ((i=1;i<${#1};i++)); do
     case ${1:$i:1} in
       h) show_help ;;
-      w) write_enabled=true ;;
+      w) option_write_enabled=true ;;
+      x) option_print_as_hex=true ;;
     esac
   done
   shift
@@ -41,7 +43,7 @@ file=$1
 [[ -f "$file" ]] || { echo "Not a file: $file" >&2; exit 1; }
 search=${2,,}
 replace=$3
-if [[ $replace != "" && $write_enabled != true ]]; then
+if [[ $replace != "" && $option_write_enabled != true ]]; then
   echo "Use option -w to enable write mode." >&2
   exit 1
 fi
@@ -125,7 +127,7 @@ for ((i=0;i<indexTableEntries;i++)); do
   dataOffset=0x${dataOffset:6:2}${dataOffset:4:2}${dataOffset:2:2}${dataOffset:0:2}
 
   # Write data to file
-  if [[ $search == "${key[$i],,}" && $write_enabled == true ]]; then
+  if [[ $search == "${key[$i],,}" && $option_write_enabled == true ]]; then
     case $param_fmt in
       0402) # Replace UTF-8 string
         # Check new string for valid length
@@ -154,7 +156,7 @@ for ((i=0;i<indexTableEntries;i++)); do
         fi
         # Check new integer for valid size
         newint=$(printf "%08x" "$replace" 2> /dev/null)
-        if [[ ${#newint} -gt $(($paramMaxLen*2)) ]]; then
+        if [[ ${#newint} -gt $((paramMaxLen*2)) ]]; then
           echo "Error: Replacement integer \"$replace\" larger than limit ($((0xFFFFFFFF)))." >&2
           exit 1
         fi
@@ -183,7 +185,11 @@ for ((i=0;i<indexTableEntries;i++)); do
       ;;
     0404) # Integer
       data=0x${data:6:2}${data:4:2}${data:2:2}${data:0:2}
-      echo "$((data))"
+      if [[ $option_print_as_hex == true ]]; then
+        echo "$data"
+      else
+        echo "$((data))"
+      fi
       ;;
     *) echo "[UNKNOWN DATA TYPE]"
   esac
