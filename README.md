@@ -19,7 +19,7 @@ You can print all SFO info:
     sfo param.sfo
     sfo your-game.pkg
 
-You can also search for a specific key, for example:
+You can search for a specific key (case-insensitive), for example:
 
     sfo param.sfo PUBTOOLINFO
     sfo your-game.pkg content_id
