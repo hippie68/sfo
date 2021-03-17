@@ -5,7 +5,7 @@
 # Made with info from https://www.psdevwiki.com/ps4/Param.sfo
 
 show_usage() {
-  echo "Usage: ${0##*/} [-hwx] file [search] [replace]" >&2
+  echo "Usage: ${0##*/} [-hw] file [search] [replace]" >&2
 }
 
 show_help() {
@@ -17,8 +17,7 @@ show_help() {
 
   Options:
     -h  Display this help info
-    -w  Enable write mode
-    -x  Print integer data in hexadecimal format"
+    -w  Enable write mode"
   exit
 }
 
@@ -33,7 +32,6 @@ while [[ $1 == "-"?* ]]; do
     case ${1:$i:1} in
       h) show_help ;;
       w) option_write_enabled=true ;;
-      x) option_print_as_hex=true ;;
     esac
   done
   shift
@@ -155,7 +153,11 @@ for ((i=0;i<indexTableEntries;i++)); do
           exit 1
         fi
         # Check new integer for valid size
-        newint=$(printf "%08x" "$replace" 2> /dev/null)
+        if [[ $replace == 0x* ]]; then
+          newint=$(printf "%08d" "${replace#0x}")
+        else
+          newint=$(printf "%08x" "$replace" 2> /dev/null)
+        fi
         if [[ ${#newint} -gt $((paramMaxLen*2)) ]]; then
           echo "Error: Replacement integer \"$replace\" larger than limit ($((0xFFFFFFFF)))." >&2
           exit 1
@@ -164,7 +166,9 @@ for ((i=0;i<indexTableEntries;i++)); do
         printf "%x: %04d" $((pkgOffset+dataTableOffset+dataOffset)) \
           | xxd -r - "$file"
         # Write new integer to file
-        newint=${newint:6:2}${newint:4:2}${newint:2:2}${newint:0:2}
+        if [[ $replace != 0x* ]]; then
+          newint=${newint:6:2}${newint:4:2}${newint:2:2}${newint:0:2}
+        fi
         printf "%x: %s" $((pkgOffset+dataTableOffset+dataOffset)) "$newint" \
           | xxd -r - "$file"
         ;;
@@ -185,11 +189,7 @@ for ((i=0;i<indexTableEntries;i++)); do
       ;;
     0404) # Integer
       data=0x${data:6:2}${data:4:2}${data:2:2}${data:0:2}
-      if [[ $option_print_as_hex == true ]]; then
-        echo "$data"
-      else
-        echo "$((data))"
-      fi
+      echo "$data"
       ;;
     *) echo "[UNKNOWN DATA TYPE]"
   esac
