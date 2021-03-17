@@ -11,8 +11,8 @@ Usage:
 Options:
 
     -h  Display help
-    -w Enable write mode
-    -x Print integer data in hexadecimal format
+    -w  Enable write mode
+    -x  Print integer data in hexadecimal format
 
 You can print all SFO info:
 
