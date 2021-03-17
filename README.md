@@ -1,5 +1,19 @@
 # sfo
 
+Prints SFO information of either a PS4 PKG or param.sfo file.                  
+Providing a search string will output the value of that specific key only.     
+Providing a replacement string will write it to the file (needs option -w). 
+
+Usage:
+
+    sfo [options] file [search] [replace]
+
+Options:
+
+    -h  Display help
+    -w Enable write mode
+    -x Print integer data in hexadecimal format
+
 You can print all SFO info:
 
     sfo param.sfo
