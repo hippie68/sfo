@@ -27,7 +27,7 @@ You can also overwrite existing data, for example:
 
     sfo -w param.sfo app_type 2
 
-To overwrite integer data, you can use both regular and hex numbers.
+To overwrite integer data, you can use decimal or hexadecimal numbers.
 
 Known issues:
 - Overwriting PKG files directly may result in a broken PKG. Writing the original values will restore the PKG.
