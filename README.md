@@ -12,7 +12,6 @@ Options:
 
     -h  Display help
     -w  Enable write mode
-    -x  Print integer data in hexadecimal format
 
 You can print all SFO info:
 
@@ -28,7 +27,7 @@ You can also overwrite existing data, for example:
 
     sfo -w param.sfo app_type 2
 
-To overwrite integer data, use regular decimal numbers (not 0x...).
+To overwrite integer data, you can use both regular and hex numbers.
 
 Known issues:
 - Overwriting PKG files directly may result in a broken PKG. Writing the original values will restore the PKG.
