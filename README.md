@@ -31,3 +31,10 @@ To overwrite integer data, you can use decimal or hexadecimal numbers.
 
 Known issues:
 - Overwriting PKG files directly may result in a broken PKG. Writing the original values will restore the PKG.
+
+Compiling sfo.c:
+sfo.c is faster than the sfo Bash script, but currently only supports reading. It is compatible with the fw script (https://github.com/hippie68/fw), making the output faster. To compile, just enter
+
+    make sfo
+
+Windows binaries are available in the Release section: https://github.com/hippie68/sfo/releases.
