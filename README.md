@@ -34,8 +34,16 @@ Known issues:
 
 # sfo.c
 
-sfo.c is faster than the sfo Bash script, but currently only supports reading. It is compatible with the fw script (https://github.com/hippie68/fw), making the output faster. To compile, just enter
+sfo.c can be compiled into a command line program, which is faster than the "sfo" Bash script (roughly by factor 30). It is still compatible with the "pkgrename" and "fw" scripts (https://github.com/hippie68/pkgrename, https://github.com/hippie68/fw), making their output faster. To compile, just enter
 
     make sfo
+
+The command line options have changed a little:
+
+    -d  Display integer values as decimal numerals
+    -D  Print debug information
+    -h  Display this help info
+    -v  Increase verbosity
+    -w  Enable write access
 
 Windows binaries are available in the Release section: https://github.com/hippie68/sfo/releases.
