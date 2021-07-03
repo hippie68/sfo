@@ -1,6 +1,6 @@
 # sfo
 
-Prints SFO information of either a PS4 PKG or param.sfo file.                  
+Prints or modifies SFO parameters of a PS4 PKG or a param.sfo file.                  
 Providing a search string will output the value of that specific key only.     
 Providing a replacement string will write it to the file (needs option -w). 
 
@@ -41,7 +41,6 @@ sfo.c can be compiled into a command line program, which is faster than the "sfo
 The command line options have changed a little:
 
     -d  Display integer values as decimal numerals
-    -D  Print debug information
     -h  Display this help info
     -v  Increase verbosity
     -w  Enable write access
