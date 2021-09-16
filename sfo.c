@@ -10,7 +10,7 @@
 
 // Global variables
 FILE *file;
-long int pkg_offset = 0;
+long int psf_offset = 0;
 
 // Default options
 int option_decimal = 0;
@@ -69,18 +69,18 @@ void toupper_string(char *string) {
   }
 }
 
-// Returns "length" bytes, starting at specified offset
-int getbytes(long int offset, int length) {
-  int bytes;
-  fseek(file, pkg_offset + offset, SEEK_SET);
-  fread(&bytes, length, 1, file);
-  return bytes;
+// Reads and returns a 32-bit integer, starting at specified file offset
+uint32_t get_int(long int offset) {
+  uint32_t integer;
+  fseek(file, psf_offset + offset, SEEK_SET);
+  fread(&integer, sizeof integer, 1, file);
+  return integer;
 }
 
 // Finds the param.sfo's offset inside a PS4 PKG file
 int get_ps4_pkg_offset() {
-  const int pkg_table_offset = bswap_32(getbytes(0x018, 4));
-  const int pkg_file_count = bswap_32(getbytes(0x00C, 4));
+  const uint32_t pkg_table_offset = bswap_32(get_int(0x018));
+  const uint32_t pkg_file_count = bswap_32(get_int(0x00C));
   struct pkg_table_entry {
     uint32_t id;
     uint32_t filename_offset;
@@ -91,7 +91,7 @@ int get_ps4_pkg_offset() {
     uint64_t padding;
   } pkg_table_entry[pkg_file_count];
   fseek(file, pkg_table_offset, SEEK_SET);
-  fread(pkg_table_entry, sizeof(struct pkg_table_entry) * pkg_file_count, 1, file);
+  fread(pkg_table_entry, sizeof (struct pkg_table_entry) * pkg_file_count, 1, file);
   for (int i = 0; i < pkg_file_count; i++) {
     if (pkg_table_entry[i].id == 1048576) { // param.sfo ID
       return bswap_32(pkg_table_entry[i].offset);
@@ -176,10 +176,13 @@ int main(int argc, char *argv[])
   }
 
   // Set PKG offset if file is a PKG
-  int magic = getbytes(0, 4);
+  int magic = get_int(0);
   if (magic == 1414415231) { // PS4 PKG file
-    pkg_offset = get_ps4_pkg_offset();
-    magic = getbytes(0, 4);
+    psf_offset = get_ps4_pkg_offset();
+    magic = get_int(0);
+  } else if (magic == 1128612691) { // Disc param.sfo
+    psf_offset = 0x800;
+    magic = get_int(0);
   }
 
   // Exit if param.sfo not found
@@ -196,8 +199,8 @@ int main(int argc, char *argv[])
     uint32_t datatable_offset;
     uint32_t indextable_entries;
   } sfo_header;
-  fseek(file, pkg_offset, SEEK_SET);
-  fread(&sfo_header, sizeof(struct sfo_header), 1, file);
+  fseek(file, psf_offset, SEEK_SET);
+  fread(&sfo_header, sizeof (struct sfo_header), 1, file);
 
   // Print header info if verbose
   if (option_verbose == 1) {
@@ -208,8 +211,8 @@ int main(int argc, char *argv[])
   }
 
   // Define the index table
-  const int indextable_offset = 0x14;
-  const int indextable_entry_size = 0x10;
+  const long int indextable_offset = 0x14;
+  const long int indextable_entry_size = 0x10;
   struct indextable_entry {
     uint16_t keytable_offset;
     uint16_t param_fmt; // Type of data
@@ -219,16 +222,15 @@ int main(int argc, char *argv[])
   } indextable_entry[sfo_header.indextable_entries];
 
   // Loop starts here
-  int integer = 0;
   for (int i = 0; i < sfo_header.indextable_entries; i++) {
-    fseek(file, pkg_offset + indextable_offset + i * indextable_entry_size, SEEK_SET);
-    fread(&indextable_entry[i], sizeof(struct indextable_entry), 1, file);
+    fseek(file, psf_offset + indextable_offset + i * indextable_entry_size, SEEK_SET);
+    fread(&indextable_entry[i], sizeof (struct indextable_entry), 1, file);
 
     // Get current parameter's key name
-    char *key;
-    key = malloc(50);
-    fseek(file, pkg_offset + sfo_header.keytable_offset + indextable_entry[i].keytable_offset, SEEK_SET);
+    char key[50];
+    fseek(file, psf_offset + sfo_header.keytable_offset + indextable_entry[i].keytable_offset, SEEK_SET);
     fread(key, 50, 1, file);
+    key[49] = '\0';
 
     // Continue loop if key does not match the (optional) search term
     if (option_search == 0) {
@@ -239,7 +241,6 @@ int main(int argc, char *argv[])
       // Print current parameter's key
       printf("%s=", key);
     } else if (strcmp(search, key) != 0) {
-      free(key);
       continue;
     }
 
@@ -250,35 +251,33 @@ int main(int argc, char *argv[])
           case 516: // UTF-8 string
             ;
             // Check new string for valid length
-            int string_length = strlen(replace);
-            if (string_length > indextable_entry[i].parameter_max_length - 1) {
-              fprintf(stderr, "ERROR: Replacement string \"%s\" too large (%d/%d characters).\n", replace, string_length, indextable_entry[i].parameter_max_length - 1);
+            int replace_length = strlen(replace);
+            if (replace_length > indextable_entry[i].parameter_max_length - 1) {
+              fprintf(stderr, "ERROR: Replacement string \"%s\" too large (%d/%d characters).\n", replace, replace_length, indextable_entry[i].parameter_max_length - 1);
               return 0;
             }
-            // Fill space with zeros
-            char *string;
-            string = malloc(indextable_entry[i].parameter_max_length);
-            memset(string, '\0', indextable_entry[i].parameter_max_length);
-            fseek(file, pkg_offset + sfo_header.datatable_offset + indextable_entry[i].datatable_offset, SEEK_SET);
-            fwrite(string, indextable_entry[i].parameter_max_length, 1, file);
-            free(string);
-            // Write new string to file
-            fseek(file, pkg_offset + sfo_header.datatable_offset + indextable_entry[i].datatable_offset, SEEK_SET);
-            fwrite(replace, strlen(replace), 1, file);
+            // Write new string, zero-padded, to file
+            {
+              char string[indextable_entry[i].parameter_max_length];
+              memset(string, 0, sizeof string);
+              memcpy(string, replace, replace_length);
+              fseek(file, psf_offset + sfo_header.datatable_offset + indextable_entry[i].datatable_offset, SEEK_SET);
+              fwrite(string, sizeof string, 1, file);
+            }
             // Write new parameter length to file
-            indextable_entry[i].parameter_length = strlen(replace) + 1;
-            fseek(file, pkg_offset + indextable_offset + i * indextable_entry_size, SEEK_SET);
+            indextable_entry[i].parameter_length = replace_length + 1;
+            fseek(file, psf_offset + indextable_offset + i * indextable_entry_size, SEEK_SET);
             fwrite(&indextable_entry[i], indextable_entry_size, 1, file);
             break;
           case 1028: // Integer
-            fseek(file, pkg_offset + sfo_header.datatable_offset + indextable_entry[i].datatable_offset, SEEK_SET);
-            uint32_t temp;
+            fseek(file, psf_offset + sfo_header.datatable_offset + indextable_entry[i].datatable_offset, SEEK_SET);
+            uint32_t integer;
             if (strlen(replace) > 1 && (replace[1] == 'x' || replace[1] == 'X')) {
-              sscanf(replace, "%x", &temp);
+              sscanf(replace, "%x", &integer);
             } else {
-              temp = atoi(replace);
+              integer = atoi(replace);
             }
-            fwrite(&temp, 4, 1, file);
+            fwrite(&integer, sizeof integer, 1, file);
             break;
           default:
             fprintf(stderr, "ERROR: Unknown data type: %04X\n", bswap_16(indextable_entry[i].param_fmt));
@@ -291,20 +290,23 @@ int main(int argc, char *argv[])
     } else {
       switch (indextable_entry[i].param_fmt) {
         case 516: // UTF-8 string
-          fseek(file, pkg_offset + sfo_header.datatable_offset + indextable_entry[i].datatable_offset, SEEK_SET);
-          char *string;
-          string = malloc(indextable_entry[i].parameter_length);
-          fread(string, indextable_entry[i].parameter_length, 1, file);
-          if (option_verbose == 1) {
-            printf("\"%s\" (%d/%d bytes UTF-8 string)\n", string, indextable_entry[i].parameter_length, indextable_entry[i].parameter_max_length);
-          } else {
-            printf("%s\n", string);
+          {
+            char string[indextable_entry[i].parameter_length];
+            fseek(file, psf_offset + sfo_header.datatable_offset + indextable_entry[i].datatable_offset, SEEK_SET);
+            fread(string, indextable_entry[i].parameter_length, 1, file);
+            string[indextable_entry[i].parameter_length - 1] = '\0';
+            if (option_verbose == 1) {
+              printf("\"%s\" (%d/%d bytes UTF-8 string)\n", string, indextable_entry[i].parameter_length, indextable_entry[i].parameter_max_length);
+            } else {
+              printf("%s\n", string);
+            }
           }
-          free(string);
           break;
         case 1028: // Integer
-          fseek(file, pkg_offset + sfo_header.datatable_offset + indextable_entry[i].datatable_offset, SEEK_SET);
-          fread(&integer, 4, 1, file);
+          ;
+          uint32_t integer;
+          fseek(file, psf_offset + sfo_header.datatable_offset + indextable_entry[i].datatable_offset, SEEK_SET);
+          fread(&integer, sizeof integer, 1, file);
           if (option_decimal == 1) {
             if (option_verbose == 1) {
               printf("%d (%d bytes unsigned integer)\n", integer, indextable_entry[i].parameter_length);
@@ -323,7 +325,6 @@ int main(int argc, char *argv[])
           fprintf(stderr, "ERROR: Unknown data type: %04X\n", bswap_16(indextable_entry[i].param_fmt));
       }
     }
-    free(key);
   }
 
   fclose(file);
