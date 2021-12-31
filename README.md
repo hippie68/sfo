@@ -44,6 +44,10 @@ For Windows:
 
 Windows binaries are available in the Release section: https://github.com/hippie68/sfo/releases.
 
+### Troubleshooting
+
+Option --debug prints the exact param.sfo file layout, making it easy to spot errors quickly.
+
 Please report bugs or request features at https://github.com/hippie68/sfo/issues.
 
 # sfo (old Bash script)
