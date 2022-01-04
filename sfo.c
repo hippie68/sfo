@@ -24,9 +24,9 @@ uint32_t bswap_32(uint32_t val) {
 #endif
 
 // Global variables
-const char program_version[] = "1.00 (December 31, 2021)";
+const char program_version[] = "1.01 (January 4, 2022)";
 char *program_name;
-char *search_string;
+char *query_string;
 FILE *file;
 int option_debug;
 int option_decimal;
@@ -60,6 +60,18 @@ struct table {
   unsigned int size;
   char *content;
 } key_table, data_table;
+
+enum cmd {cmd_add, cmd_delete, cmd_edit, cmd_set};
+
+struct command {
+  enum cmd cmd;
+  struct {
+    char *type;
+    char *key;
+    char *value;
+  } param;
+} *commands;
+int commands_count;
 
 void load_header(FILE *file) {
   if (fread(&header, sizeof(struct header), 1, file) != 1) {
@@ -151,11 +163,11 @@ void hexprint(char *array, int array_len) {
 void print_header(void) {
   fprintf(stderr, "Header:\n");
   fprintf(stderr, "Size: %d\n", sizeof(header));
-  fprintf(stderr, "magic: %u\n", header.magic);
-  fprintf(stderr, "version: %u\n", header.version);
-  fprintf(stderr, "key_table_offset: %u\n", header.key_table_offset);
-  fprintf(stderr, "data_table_offset: %u\n", header.data_table_offset);
-  fprintf(stderr, "entries_count: %u\n", header.entries_count);
+  fprintf(stderr, ".magic: %u\n", header.magic);
+  fprintf(stderr, ".version: %u\n", header.version);
+  fprintf(stderr, ".key_table_offset: %u\n", header.key_table_offset);
+  fprintf(stderr, ".data_table_offset: %u\n", header.data_table_offset);
+  fprintf(stderr, ".entries_count: %u\n", header.entries_count);
   fprintf(stderr, "\n");
 }
 
@@ -165,12 +177,12 @@ void print_entries(void) {
   fprintf(stderr, "Size: %d\n", sizeof(struct index_table_entry) * header.entries_count);
   for (int i = 0; i < header.entries_count; i++) {
     fprintf(stderr, "Entry %d:\n", i);
-    fprintf(stderr, "  key_offset: %u -> \"%s\"\n", entries[i].key_offset,
+    fprintf(stderr, "  .key_offset: %u -> \"%s\"\n", entries[i].key_offset,
       &key_table.content[entries[i].key_offset]);
-    fprintf(stderr, "  param_fmt: %u\n", entries[i].param_fmt);
-    fprintf(stderr, "  param_len: %u\n", entries[i].param_len);
-    fprintf(stderr, "  param_max_len: %u\n", entries[i].param_max_len);
-    fprintf(stderr, "  data_offset: %u (0x%x)-> ", entries[i].data_offset, entries[i].data_offset);
+    fprintf(stderr, "  .param_fmt: %u\n", entries[i].param_fmt);
+    fprintf(stderr, "  .param_len: %u\n", entries[i].param_len);
+    fprintf(stderr, "  .param_max_len: %u\n", entries[i].param_max_len);
+    fprintf(stderr, "  .data_offset: %u (0x%x)-> ", entries[i].data_offset, entries[i].data_offset);
     switch (entries[i].param_fmt) {
       case 516:
       case 1024:
@@ -250,14 +262,14 @@ void save_to_file(char *file_name) {
 }
 
 // Prints a single parameter
-void print_param(char *key) {
+int print_param(char *key) {
   for (int i = 0; i < header.entries_count; i ++) {
     if (!strcmp(key, &key_table.content[entries[i].key_offset])) {
       switch(entries[i].param_fmt) {
         case 516:
         case 1024:
           printf("%s\n", &data_table.content[entries[i].data_offset]);
-          return;
+          return 0;
         case 1028:
           ;
           uint32_t *integer = (uint32_t *) &data_table.content[entries[i].data_offset];
@@ -266,10 +278,11 @@ void print_param(char *key) {
           } else {
             printf("0x%08x\n", *integer);
           }
-          return;
+          return 0;
       }
     }
   }
+  return 1; // Parameter not found
 }
 
 // Prints all parameters
@@ -371,10 +384,10 @@ int get_index(char *key) {
 }
 
 // Edits a parameter in memory
-void edit_param(char *key, char *value) {
+void edit_param(char *key, char *value, int no_fail) {
   int index = get_index(key);
-  if (index < 0) {
-    if (option_force) {
+  if (index < 0) { // Parameter not found
+    if (no_fail) {
       return;
     } else {
       fprintf(stderr, "Could not edit \"%s\": parameter not found.\n", key);
@@ -436,10 +449,10 @@ void pad_table(struct table *table) {
 }
 
 // Deletes a parameter from memory
-void delete_param(char *key) {
+void delete_param(char *key, int no_fail) {
   int index = get_index(key);
-  if (index < 0) {
-    if (option_force) {
+  if (index < 0) { // Parameter not found
+    if (no_fail) {
       return;
     } else {
       fprintf(stderr, "Could not delete \"%s\": parameter not found.\n", key);
@@ -551,7 +564,7 @@ int get_reserved_string_len(char *key) {
 }
 
 // Adds a new parameter to memory
-void add_param(char *type, char *key, char *value) {
+void add_param(char *type, char *key, char *value, int no_fail) {
   struct index_table_entry new_entry = {0};
   int new_index = 0;
 
@@ -576,9 +589,9 @@ void add_param(char *type, char *key, char *value) {
   // Get new entry's index and offsets
   for (int i = 0; i < header.entries_count; i++) {
     int result = strcmp(key, &key_table.content[entries[i].key_offset]);
-    if (result == 0) {
-      if (option_force) {
-        delete_param(key);
+    if (result == 0) { // Parameter already exists
+      if (no_fail) {
+        return;
       } else {
         fprintf(stderr, "Could not add \"%s\": parameter already exists.\n", key);
         exit(1);
@@ -638,6 +651,12 @@ void add_param(char *type, char *key, char *value) {
   }
 }
 
+// Overwrites an existing parameter or creates a new one
+void set_param(char *type, char *key, char *value) {
+  delete_param(key, 1);
+  add_param(type, key, value, 1);
+}
+
 // Returns a filename without its path
 char *basename(char *filename) {
   #if defined(_WIN32) || defined(_WIN64)
@@ -668,26 +687,34 @@ void print_usage(int exit_code) {
   "  - PS4 param.sfo (print and modify)\n"
   "  - PS4 disc param.sfo (print only)\n"
   "  - PS4 PKG (print only)\n\n"
-  "The modification options (-a/--add, -d/--delete, -e/--edit) can be used\n"
-  "multiple times. They are automatically queued to run in appropriate order. If\n"
-  "any modification fails, changes are discarded and no data is written.\n\n"
+  "The modification options (-a/--add, -d/--delete, -e/--edit, -s/--set) can be\n"
+  "used multiple times. Modifications are done in memory first, in the order in\n"
+  "which they appear in the program's command line arguments.\n"
+  "If any modification fails, all changes are discarded and no data is written:\n\n"
+  "  Modification  Fail condition\n"
+  "  --------------------------------------\n"
+  "  Add           Parameter already exists\n"
+  "  Delete        Parameter not found\n"
+  "  Edit          Parameter not found\n"
+  "  Set           None\n\n"
   "Options:\n"
-  "  -a, --add TYPE PARAMETER VALUE  Add a new parameter.\n"
-  "                                  TYPE must be either \"int\" or \"str\".\n"
+  "  -a, --add TYPE PARAMETER VALUE  Add a new parameter, not overwriting existing\n"
+  "                                  data. TYPE must be either \"int\" or \"str\".\n"
   "  -d, --delete PARAMETER          Delete specified parameter.\n"
   "      --debug                     Print debug information.\n"
   "      --decimal                   Display integer values as decimal numerals.\n"
   "  -e, --edit PARAMETER VALUE      Change specified parameter's value.\n"
   "  -f, --force                     Do not abort when modifications fail. Make\n"
-  "                                  option --add overwrite existing parameters.\n"
-  "                                  Make option --new-file overwrite existing\n"
-  "                                  files. Useful for automation.\n"
+  "                                  option --new-file overwrite existing files.\n"
   "  -h, --help                      Print usage information and quit.\n"
   "      --new-file                  If FILE (see above) does not exist, create a\n"
   "                                  new param.sfo file of the same name.\n"
   "  -o, --output-file OUTPUT_FILE   Save the final data to a new file of type\n"
   "                                  \"param.sfo\", overwriting existing files.\n"
-  "  -s, --search PARAMETER          If PARAMETER exists, print its value.\n"
+  "  -q, --query PARAMETER           Print a parameter's value and quit.\n"
+  "                                  If the parameter exists, the exit code is 0.\n"
+  "  -s, --set TYPE PARAMETER VALUE  Set a parameter, whether it exists or not,\n"
+  "                                  overwriting existing data.\n"
   "  -v, --verbose                   Increase verbosity.\n"
   "      --version                   Print version information and quit.\n"
   ,basename(program_name));
@@ -752,29 +779,9 @@ void toupper_string(char *string) {
   }
 }
 
-struct ADD_command {
-  char *type;
-  char *key;
-  char *value;
-} *ADD_commands;
-int ADD_commands_count;
-
-struct DEL_command {
-  char *key;
-} *DEL_commands;
-int DEL_commands_count;
-
-struct EDIT_command {
-  char *key;
-  char *value;
-} *EDIT_commands;
-int EDIT_commands_count;
-
 // Frees all previously malloc'ed pointers; used for memory leak tests
 void clean_exit(void) {
-  if (ADD_commands) free(ADD_commands);
-  if (DEL_commands) free(DEL_commands);
-  if (EDIT_commands) free(EDIT_commands);
+  if (commands) free(commands);
   if (entries) free(entries);
   if (key_table.content) free(key_table.content);
   if (data_table.content) free(data_table.content);
@@ -792,7 +799,7 @@ void create_param_sfo(char *file_name) {
 }
 
 int main(int argc, char *argv[]) {
-  atexit(clean_exit); // Only used for memory leak tests
+  atexit(clean_exit);
 
   char *input_file_name = NULL;
   char *output_file_name = NULL;
@@ -812,45 +819,48 @@ int main(int argc, char *argv[]) {
       }
     // Parse options
     } else if (!strcmp(argv[0], "-a") || !strcmp(argv[0], "--add")) {
-      ADD_commands = _realloc(ADD_commands, sizeof(struct ADD_command) * (ADD_commands_count + 1));
+      commands = _realloc(commands, sizeof(struct command) * (commands_count + 1));
+      commands[commands_count].cmd = cmd_add;
       shift(&argc, &argv);
       // TYPE
       if (strcmp(argv[0], "str") && strcmp(argv[0], "int")) {
-        fprintf(stderr, "option --add: TYPE must be \"int\" or \"str\".\n");
+        fprintf(stderr, "Option --add: TYPE must be \"int\" or \"str\".\n");
         print_usage(1);
       }
-      ADD_commands[ADD_commands_count].type = argv[0];
+      commands[commands_count].param.type = argv[0];
       shift(&argc, &argv);
       // NAME
       toupper_string(argv[0]);
-      ADD_commands[ADD_commands_count].key = argv[0];
+      commands[commands_count].param.key = argv[0];
       shift(&argc, &argv);
       // VALUE
-      ADD_commands[ADD_commands_count].value = argv[0];
-      ADD_commands_count++;
+      commands[commands_count].param.value = argv[0];
+      commands_count++;
     } else if (!strcmp(argv[0], "--new-file")) {
       option_new_file = 1;
     } else if (!strcmp(argv[0], "-d") || !strcmp(argv[0], "--delete")) {
-      DEL_commands = _realloc(DEL_commands, sizeof(struct DEL_command) * (DEL_commands_count + 1));
+      commands = _realloc(commands, sizeof(struct command) * (commands_count + 1));
+      commands[commands_count].cmd = cmd_delete;
       shift(&argc, &argv);
       // NAME
       toupper_string(argv[0]);
-      DEL_commands[DEL_commands_count].key = argv[0];
-      DEL_commands_count++;
+      commands[commands_count].param.key = argv[0];
+      commands_count++;
     } else if (!strcmp(argv[0], "--debug")) {
       option_debug = 1;
     } else if (!strcmp(argv[0], "--decimal")) {
       option_decimal = 1;
     } else if (!strcmp(argv[0], "-e") || !strcmp(argv[0], "--edit")) {
-      EDIT_commands = _realloc(EDIT_commands, sizeof(struct EDIT_command) * (EDIT_commands_count + 1));
+      commands = _realloc(commands, sizeof(struct command) * (commands_count + 1));
+      commands[commands_count].cmd = cmd_edit;
       shift(&argc, &argv);
       // NAME
       toupper_string(argv[0]);
-      EDIT_commands[EDIT_commands_count].key = argv[0];
+      commands[commands_count].param.key = argv[0];
       shift(&argc, &argv);
       // VALUE
-      EDIT_commands[EDIT_commands_count].value = argv[0];
-      EDIT_commands_count++;
+      commands[commands_count].param.value = argv[0];
+      commands_count++;
     } else if (!strcmp(argv[0], "-f") || !strcmp(argv[0], "--force")) {
         option_force = 1;
     } else if (!strcmp(argv[0], "-h") || !strcmp(argv[0], "--help")) {
@@ -858,16 +868,35 @@ int main(int argc, char *argv[]) {
     } else if (!strcmp(argv[0], "-o") || !strcmp(argv[0], "--output-file")) {
       shift(&argc, &argv);
       output_file_name = argv[0];
-    } else if (!strcmp(argv[0], "-s") || !strcmp(argv[0], "--search")) {
+    } else if (!strcmp(argv[0], "-q") || !strcmp(argv[0], "--query")) {
       shift(&argc, &argv);
       toupper_string(argv[0]);
-      if (!search_string) {
-        search_string = argv[0];
+      if (!query_string) {
+        query_string = argv[0];
       } else {
         fprintf(stderr, "Only 1 search is allowed. Conflicting search strings:\n"
-          "  \"%s\"\n, \"%s\"\n.\n", search_string, argv[0]);
+          "  \"%s\"\n, \"%s\"\n.\n", query_string, argv[0]);
         exit(1);
       }
+    } else if (!strcmp(argv[0], "-s") || !strcmp(argv[0], "--set")) {
+      commands = _realloc(commands, sizeof(struct command) *
+        (commands_count + 1));
+      commands[commands_count].cmd = cmd_set;
+      shift(&argc, &argv);
+      // TYPE
+      if (strcmp(argv[0], "str") && strcmp(argv[0], "int")) {
+        fprintf(stderr, "Option --set: TYPE must be \"int\" or \"str\".\n");
+        print_usage(1);
+      }
+      commands[commands_count].param.type = argv[0];
+      shift(&argc, &argv);
+      // NAME
+      toupper_string(argv[0]);
+      commands[commands_count].param.key = argv[0];
+      shift(&argc, &argv);
+      // VALUE
+      commands[commands_count].param.value = argv[0];
+      commands_count++;
     } else if (!strcmp(argv[0], "-v") || !strcmp(argv[0], "--verbose")) {
       option_verbose = 1;
     } else if (!strcmp(argv[0], "--version")) {
@@ -884,46 +913,47 @@ int main(int argc, char *argv[]) {
   if (option_debug) {
     fprintf(stderr, "Command line parsing results:\n\n");
     if (input_file_name == NULL) { // printf + null pointer = undefined behavior
-      fprintf(stderr, "input_file_name: (NULL)\n");
+      fprintf(stderr, "input_file_name: NULL\n");
     } else {
-      fprintf(stderr, "input_file_name: %s\n", input_file_name);
+      fprintf(stderr, "input_file_name: \"%s\"\n", input_file_name);
     }
     if (output_file_name == NULL) {
-      fprintf(stderr, "output_file_name: (NULL)\n");
+      fprintf(stderr, "output_file_name: NULL\n");
     } else {
-      fprintf(stderr, "output_file_name: %s\n", output_file_name);
+      fprintf(stderr, "output_file_name: \"%s\"\n", output_file_name);
     }
     fprintf(stderr, "option_debug: %d\n", option_debug);
     fprintf(stderr, "option_decimal: %d\n", option_decimal);
+    fprintf(stderr, "option_force: %d\n", option_force);
     fprintf(stderr, "option_new_file: %d\n", option_new_file);
     fprintf(stderr, "option_verbose: %d\n", option_verbose);
-    if (search_string == NULL) {
-      fprintf(stderr, "search_string: (NULL)\n");
+    if (query_string == NULL) {
+      fprintf(stderr, "query_string: NULL\n");
     } else {
-      fprintf(stderr, "search_string: %s\n", search_string);
+      fprintf(stderr, "query_string: \"%s\"\n", query_string);
     }
-    if (ADD_commands == NULL) {
-      fprintf(stderr, "ADD_commands: (NULL)\n");
-    } else {
-      for (int i = 0; i < ADD_commands_count; i++) {
-        fprintf(stderr, "ADD_commands[%d].type: %s\n", i, ADD_commands[i].type);
-        fprintf(stderr, "ADD_commands[%d].key: %s\n", i, ADD_commands[i].key);
-        fprintf(stderr, "ADD_commands[%d].value: %s\n", i, ADD_commands[i].value);
+    fprintf(stderr, "commands_count: %d\n", commands_count);
+    for (int i = 0; i < commands_count; i++) {
+      fprintf(stderr, "Command %d:\n", i);
+      fprintf(stderr, "  .cmd: %d (", commands[i].cmd);
+      char *cmd;
+      switch (commands[i].cmd) {
+        case 0: cmd = "add"; break;
+        case 1: cmd = "delete"; break;
+        case 2: cmd = "edit"; break;
+        case 3: cmd = "set"; break;
       }
-    }
-    if (DEL_commands == NULL) {
-      fprintf(stderr, "DEL_commands: (NULL)\n");
-    } else {
-      for (int i = 0; i < DEL_commands_count; i++) {
-        fprintf(stderr, "DEL_commands[%d].key: %s\n", i, DEL_commands[i].key);
+      fprintf(stderr, "%s)\n", cmd);
+      fprintf(stderr, "  .param.type: %d\n", commands[i].param.type);
+      if (commands[i].param.key) {
+        fprintf(stderr, "  .param.key: \"%s\"\n", commands[i].param.key);
+      } else {
+        fprintf(stderr, "  .param.key: NULL\n", commands[i].param.key);
       }
-    }
-    if (EDIT_commands == NULL) {
-      fprintf(stderr, "EDIT_commands: (NULL)\n");
-    } else {
-      for (int i = 0; i < EDIT_commands_count; i++) {
-        fprintf(stderr, "EDIT_commands[%d].key: %s\n", i, EDIT_commands[i].key);
-        fprintf(stderr, "EDIT_commands[%d].value: %s\n", i, EDIT_commands[i].value);
+      if (commands[i].param.value) {
+        fprintf(stderr, "  .param.value: \"%s\"\n", commands[i].param.value);
+      } else  {
+        fprintf(stderr, "  .param.value: NULL\n");
       }
     }
     fprintf(stderr, "\n");
@@ -978,7 +1008,7 @@ int main(int argc, char *argv[]) {
   }
 
   // If there are any queued commands, run them and save the file
-  if (ADD_commands_count || DEL_commands_count || EDIT_commands_count) {
+  if (commands_count) {
     if (magic == 1414415231) {
       fprintf(stderr, "Cannot edit PKG files.\n");
       exit(1);
@@ -988,26 +1018,33 @@ int main(int argc, char *argv[]) {
       exit(1);
     }
 
-    for (int i = 0; i < DEL_commands_count; i++) {
-      delete_param(DEL_commands[i].key);
-    }
-    for (int i = 0; i < ADD_commands_count; i++) {
-      add_param(ADD_commands[i].type, ADD_commands[i].key, ADD_commands[i].value);
-    }
-    for (int i = 0; i < EDIT_commands_count; i++) {
-      edit_param(EDIT_commands[i].key, EDIT_commands[i].value);
+    for (int i = 0; i < commands_count; i++) {
+      switch (commands[i].cmd) {
+        case cmd_add:
+          add_param(commands[i].param.type, commands[i].param.key,
+            commands[i].param.value, option_force);
+          break;
+        case cmd_delete:
+          delete_param(commands[i].param.key, option_force);
+          break;
+        case cmd_edit:
+          edit_param(commands[i].param.key, commands[i].param.value,
+            option_force);
+          break;
+        case cmd_set:
+          set_param(commands[i].param.type, commands[i].param.key,
+            commands[i].param.value);
+          break;
+      }
     }
 
     if (option_debug) {
-      fprintf(stderr, "Memory after running commands (header's table offsets will be updated when saving the file):\n\n");
+      fprintf(stderr, "Memory after running commands:\n\n"
+        "Header's table offsets will be updated when saving the file.\n\n");
       print_header();
       print_entries();
       print_key_table();
       print_data_table();
-    }
-
-    if (search_string) {
-      print_param(search_string);
     }
 
     if (output_file_name) {
@@ -1015,14 +1052,19 @@ int main(int argc, char *argv[]) {
     } else {
       save_to_file(input_file_name);
     }
-  } else {
-    if (search_string) {
-      print_param(search_string);
-    } else {
-      print_params();
+
+    if (query_string) {
+      return print_param(query_string);
     }
+  } else {
     if (output_file_name) {
       save_to_file(output_file_name);
+    }
+
+    if (query_string) {
+      return print_param(query_string);
+    } else {
+      print_params();
     }
   }
 
