@@ -24,7 +24,7 @@ uint32_t bswap_32(uint32_t val) {
 #endif
 
 // Global variables
-const char program_version[] = "1.01 (January 4, 2022)";
+const char program_version[] = "1.02 (January 4, 2022)";
 char *program_name;
 char *query_string;
 FILE *file;
@@ -418,6 +418,9 @@ void edit_param(char *key, char *value, int no_fail) {
           entries[i].data_offset += diff;
         }
       }
+      // Overwrite old data with zeros
+      memset(&data_table.content[entries[index].data_offset], 0,
+        entries[index].param_max_len);
       // Save new string to data table
       snprintf(&data_table.content[entries[index].data_offset],
         entries[index].param_max_len, "%s", value);
