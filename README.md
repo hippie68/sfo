@@ -52,11 +52,11 @@ Viewing SFO parameters:
 
 Modifying SFO parameters:
 
-    sfo -e title "Super Mario Bros." -d title_00 -s PUBTOOL_VER int 0x123 param.sfo
+    sfo -e title "Super Mario Bros." -d title_00 -s int pubtool_ver 0x123 param.sfo
 
 Modifying SFO parameters but saving to a different file:
 
-    sfo -e title "Super Mario Bros." -d title_00 -s PUBTOOL_VER int 0x123 param.sfo --output-file test.sfo
+    sfo -e title "Super Mario Bros." -d title_00 -s int pubtool_ver 0x123 param.sfo --output-file test.sfo
 
 Extracting a param.sfo file from a PS4 PKG file:
 
